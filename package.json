@@ -4,8 +4,8 @@
   "description": "A backend-only application for managing items and user authentication.",
   "main": "backend/app.js",
   "scripts": {
-    "start": "node backend/app.js",
-    "dev": "nodemon backend/app.js"
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js"
   },
   "keywords": [
     "express",
