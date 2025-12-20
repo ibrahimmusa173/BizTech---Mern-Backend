@@ -10,21 +10,20 @@ const userSchema = new mongoose.Schema({
         type: String, 
         enum: ['Client', 'Vendor', 'Admin'], 
         default: 'Client' 
-    }
+    },
+    // Add these two fields for password recovery
+    resetPasswordToken: String,
+    resetPasswordExpire: Date
 }, { timestamps: true });
 
-// Hashing password before saving
-// FIXED: Removed 'next' parameter and 'next()' calls because this is an async function
 userSchema.pre('save', async function() {
     if (!this.isModified('password')) {
         return;
     }
-    
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
 });
 
-// Method to compare passwords
 userSchema.methods.matchPassword = async function(enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
