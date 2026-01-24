@@ -51,6 +51,7 @@ backend/models/User.js
 backend/repomix-output.xml
 backend/routes/authRoutes.js
 backend/routes/userRoutes.js
+backend/server.js
 backend/utils/emailService.js
 package.json
 README.md
@@ -90,6 +91,33 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+</file>
+
+<file path="backend/server.js">
+const path = require('path');
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
+const app = require('./app'); // Import the app setup
+
+// 1. Load Env Vars
+dotenv.config({ path: path.join(__dirname, '.env') });
+
+// 2. Connect to Database
+connectDB();
+
+// 3. Start Server
+const PORT = process.env.PORT || 7000;
+
+const server = app.listen(PORT, () => {
+    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+});
+
+// Handle unhandled promise rejections (Optional but recommended)
+process.on('unhandledRejection', (err, promise) => {
+    console.log(`Error: ${err.message}`);
+    // Close server & exit process
+    server.close(() => process.exit(1));
+});
 </file>
 
 <file path="backend/config/db.js">
@@ -914,8 +942,8 @@ module.exports = mongoose.model('User', userSchema);
   "description": "A backend-only application for managing items and user authentication.",
   "main": "backend/app.js",
   "scripts": {
-    "start": "node backend/app.js",
-    "dev": "nodemon backend/app.js"
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js"
   },
   "keywords": [
     "express",
@@ -954,31 +982,21 @@ module.exports = mongoose.model('User', userSchema);
 
 <file path="backend/app.js">
 const express = require('express');
-const path = require('path');
-const dotenv = require('dotenv');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const cors = require('cors');
 
-// 1. Load Env Vars (Path points to .env inside backend folder)
-dotenv.config({ path: path.join(__dirname, '.env') });
-
-const connectDB = require('./config/db');
-
-// 2. Import Route Files
+// Import Route Files
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 
-// 3. Connect to Database
-connectDB();
-
 const app = express();
 
-// --- SECURITY MIDDLEWARE (OWASP Top 10) ---
-app.use(helmet());           // Set security headers
-app.use(express.json());     // JSON Body parser
-app.use(mongoSanitize());    // Prevent NoSQL Injection
-app.use(cors());             // Enable Cross-Origin requests
+// --- MIDDLEWARE ---
+app.use(helmet());           
+app.use(express.json());     
+app.use(mongoSanitize());    
+app.use(cors());             
 
 // --- MOUNT ROUTES ---
 app.use('/api/auth', authRoutes);
@@ -987,9 +1005,8 @@ app.use('/api/users', userRoutes);
 // Root route for testing
 app.get('/', (req, res) => res.send('API is running...'));
 
-// Start Server
-const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Secure Server running on port ${PORT}`));
+// Export the app so server.js can use it
+module.exports = app;
 </file>
 
 </files>

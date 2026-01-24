@@ -1,105 +1,51 @@
 const User = require('../models/User');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const sendEmail = require('../utils/emailService');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken'); 
+const crypto = require('crypto');     
+const { sendPasswordResetEmail } = require('../utils/emailService'); 
 
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-};
+const authController = {
+    register: (req, res) => {
+        const { name, companyName, email, password, role } = req.body;
 
-// @desc Register new user
-exports.registerUser = async (req, res) => {
-    const { name, companyName, email, password, role } = req.body;
-    try {
-        const userExists = await User.findOne({ email });
-        if (userExists) return res.status(400).json({ message: 'User already exists' });
-
-        const user = await User.create({ name, companyName, email, password, role });
-        res.status(201).json({
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            token: generateToken(user._id)
-        });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
-
-// @desc Auth user & get token
-exports.loginUser = async (req, res) => {
-    const { email, password } = req.body;
-    try {
-        const user = await User.findOne({ email });
-        if (user && (await user.matchPassword(password))) {
-            res.json({
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                token: generateToken(user._id)
-            });
-        } else {
-            res.status(401).json({ message: 'Invalid email or password' });
+        if (!name || !email || !password || !role) {
+            return res.status(400).send({ message: "Required fields missing." });
         }
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
 
-// @desc Get user profile
-exports.getUserProfile = async (req, res) => {
-    const user = await User.findById(req.user._id);
-    if (user) {
-        res.json({ _id: user._id, name: user.name, email: user.email, role: user.role, companyName: user.companyName });
-    } else {
-        res.status(404).json({ message: 'User not found' });
-    }
-};
+        User.findByEmail(email, (err, users) => {
+            if (err) return res.status(500).send({ message: "Server error." });
+            if (users && users.length > 0) return res.status(409).send({ message: "Email already exists." });
 
-// --- NEW FUNCTIONS START HERE ---
-
-// @desc Forgot Password
-exports.forgotPassword = async (req, res) => {
-    try {
-        const user = await User.findOne({ email: req.body.email });
-        if (!user) return res.status(404).json({ message: "User not found" });
-
-        const resetToken = crypto.randomBytes(20).toString('hex');
-        user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        user.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 mins
-
-        await user.save({ validateBeforeSave: false });
-
-        const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
-        const message = `Reset your password here: ${resetUrl}`;
-
-        await sendEmail({ email: user.email, subject: 'Password Reset', message });
-        res.status(200).json({ message: "Token sent to email" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
-
-// @desc Reset Password
-exports.resetPassword = async (req, res) => {
-    try {
-        const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
-        const user = await User.findOne({
-            resetPasswordToken: hashedToken,
-            resetPasswordExpire: { $gt: Date.now() }
+            User.create({ name, companyName, email, password, role }, (err, result) => {
+                if (err) return res.status(500).send({ message: "Error registering user." });
+                res.status(201).send({ message: "User registered successfully!", userId: result.insertId });
+            });
         });
+    },
 
-        if (!user) return res.status(400).json({ message: "Invalid or expired token" });
+    login: (req, res) => {
+        const { email, password } = req.body;
+        User.findByEmail(email, (err, users) => {
+            if (err || !users || users.length === 0) return res.status(401).send({ message: "Invalid credentials." });
+            const user = users[0];
+            bcrypt.compare(password, user.password, (err, isMatch) => {
+                if (!isMatch) return res.status(401).send({ message: "Invalid credentials." });
+                const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' });
+                res.status(200).send({ message: "Logged in!", token, user: { id: user.id, name: user.name } });
+            });
+        });
+    },
 
-        user.password = req.body.password;
-        user.resetPasswordToken = undefined;
-        user.resetPasswordExpire = undefined;
-        await user.save();
+    updateProfile: (req, res) => {
+        const { id } = req.params;
+        const { name, companyName } = req.body;
+        if (!name || !companyName) return res.status(400).send({ message: "Name and Company Name required." });
 
-        res.status(200).json({ message: "Password updated successfully" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+        User.updateProfile(id, name, companyName, (err, result) => {
+            if (err) return res.status(500).send({ message: "Update failed." });
+            res.status(200).send({ message: "Profile updated successfully!" });
+        });
     }
 };
+
+module.exports = authController;
