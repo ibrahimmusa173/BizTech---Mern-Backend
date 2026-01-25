@@ -51,6 +51,7 @@ backend/models/User.js
 backend/repomix-output.xml
 backend/routes/authRoutes.js
 backend/routes/userRoutes.js
+backend/server.js
 backend/utils/emailService.js
 package.json
 README.md
@@ -92,20 +93,31 @@ dist-ssr
 *.sw?
 </file>
 
-<file path="backend/config/db.js">
-const mongoose = require('mongoose');
+<file path="backend/server.js">
+const path = require('path');
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
+const app = require('./app'); // Import the app setup
 
-const connectDB = async () => {
-    try {
-        const conn = await mongoose.connect(process.env.MONGO_URI);
-        console.log(`MongoDB Connected: ${conn.connection.host}`);
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
-        process.exit(1);
-    }
-};
+// 1. Load Env Vars
+dotenv.config({ path: path.join(__dirname, '.env') });
 
-module.exports = connectDB;
+// 2. Connect to Database
+connectDB();
+
+// 3. Start Server
+const PORT = process.env.PORT || 7000;
+
+const server = app.listen(PORT, () => {
+    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+});
+
+// Handle unhandled promise rejections (Optional but recommended)
+process.on('unhandledRejection', (err, promise) => {
+    console.log(`Error: ${err.message}`);
+    // Close server & exit process
+    server.close(() => process.exit(1));
+});
 </file>
 
 <file path="backend/repomix-output.xml">
@@ -656,6 +668,95 @@ module.exports = { sendPasswordResetEmail };
 this is only backend till api's
 </file>
 
+<file path="backend/config/db.js">
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+    try {
+        const conn = await mongoose.connect(process.env.MONGO_URI);
+        console.log(`MongoDB Connected: ${conn.connection.host}`);
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exit(1);
+    }
+};
+
+module.exports = connectDB;
+</file>
+
+<file path="backend/utils/emailService.js">
+const nodemailer = require('nodemailer');
+
+const sendEmail = async (options) => {
+    const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT,
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+        },
+    });
+
+    const mailOptions = {
+        from: `BizTech Support <${process.env.EMAIL_FROM}>`,
+        to: options.email,
+        subject: options.subject,
+        text: options.message,
+    };
+
+    await transporter.sendMail(mailOptions);
+};
+
+module.exports = sendEmail;
+</file>
+
+<file path="backend/.env">
+PORT=7000
+MONGO_URI=mongodb://127.0.0.1:27017/Biz_Tech
+JWT_SECRET=a_very_long_random_string_for_security_12345
+NODE_ENV=development
+
+# Add these for Email
+EMAIL_HOST=sandbox.smtp.mailtrap.io
+EMAIL_PORT=2525
+EMAIL_USER=65b1bf7fd0ee23
+EMAIL_PASS=dc68930b7e97b6
+EMAIL_FROM=support@biztech.com
+</file>
+
+<file path="backend/middleware/authMiddleware.js">
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+// Protect Routes (Verify JWT)
+const protect = async (req, res, next) => {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        try {
+            token = req.headers.authorization.split(' ')[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            req.user = await User.findById(decoded.id).select('-password');
+            next();
+        } catch (error) {
+            res.status(401).json({ message: 'Not authorized, token failed' });
+        }
+    }
+    if (!token) res.status(401).json({ message: 'Not authorized, no token' });
+};
+
+// RBAC Middleware (Role-Based Access Control)
+const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ message: `Role ${req.user.role} is not authorized to access this route` });
+        }
+        next();
+    };
+};
+
+module.exports = { protect, authorize };
+</file>
+
 <file path="backend/routes/userRoutes.js">
 const express = require('express');
 const router = express.Router();
@@ -781,77 +882,49 @@ exports.resetPassword = async (req, res) => {
 };
 </file>
 
-<file path="backend/utils/emailService.js">
-const nodemailer = require('nodemailer');
-
-const sendEmail = async (options) => {
-    const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: process.env.EMAIL_PORT,
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-        },
-    });
-
-    const mailOptions = {
-        from: `BizTech Support <${process.env.EMAIL_FROM}>`,
-        to: options.email,
-        subject: options.subject,
-        text: options.message,
-    };
-
-    await transporter.sendMail(mailOptions);
-};
-
-module.exports = sendEmail;
-</file>
-
-<file path="backend/.env">
-PORT=7000
-MONGO_URI=mongodb://127.0.0.1:27017/Biz_Tech
-JWT_SECRET=a_very_long_random_string_for_security_12345
-NODE_ENV=development
-
-# Add these for Email
-EMAIL_HOST=sandbox.smtp.mailtrap.io
-EMAIL_PORT=2525
-EMAIL_USER=65b1bf7fd0ee23
-EMAIL_PASS=dc68930b7e97b6
-EMAIL_FROM=support@biztech.com
-</file>
-
-<file path="backend/middleware/authMiddleware.js">
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-
-// Protect Routes (Verify JWT)
-const protect = async (req, res, next) => {
-    let token;
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-        try {
-            token = req.headers.authorization.split(' ')[1];
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.user = await User.findById(decoded.id).select('-password');
-            next();
-        } catch (error) {
-            res.status(401).json({ message: 'Not authorized, token failed' });
-        }
-    }
-    if (!token) res.status(401).json({ message: 'Not authorized, no token' });
-};
-
-// RBAC Middleware (Role-Based Access Control)
-const authorize = (...roles) => {
-    return (req, res, next) => {
-        if (!roles.includes(req.user.role)) {
-            return res.status(403).json({ message: `Role ${req.user.role} is not authorized to access this route` });
-        }
-        next();
-    };
-};
-
-module.exports = { protect, authorize };
+<file path="package.json">
+{
+  "name": "backend-only-app",
+  "version": "1.0.0",
+  "description": "A backend-only application for managing items and user authentication.",
+  "main": "backend/app.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js"
+  },
+  "keywords": [
+    "express",
+    "mysql",
+    "auth",
+    "api"
+  ],
+  "author": "Your Name",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "express-mongo-sanitize": "^2.2.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "multer": "^2.0.2",
+    "nodemailer": "^6.9.14"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ibrahimmusa173/BizTech-Software-Backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ibrahimmusa173/BizTech-Software-Backend/issues"
+  },
+  "homepage": "https://github.com/ibrahimmusa173/BizTech-Software-Backend#readme"
+}
 </file>
 
 <file path="backend/routes/authRoutes.js">
@@ -907,78 +980,23 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
 module.exports = mongoose.model('User', userSchema);
 </file>
 
-<file path="package.json">
-{
-  "name": "backend-only-app",
-  "version": "1.0.0",
-  "description": "A backend-only application for managing items and user authentication.",
-  "main": "backend/app.js",
-  "scripts": {
-    "start": "node backend/app.js",
-    "dev": "nodemon backend/app.js"
-  },
-  "keywords": [
-    "express",
-    "mysql",
-    "auth",
-    "api"
-  ],
-  "author": "Your Name",
-  "license": "ISC",
-  "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "body-parser": "^1.20.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^4.22.1",
-    "express-mongo-sanitize": "^2.2.0",
-    "helmet": "^8.1.0",
-    "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.0.2",
-    "multer": "^2.0.2",
-    "nodemailer": "^6.9.14"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.11"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ibrahimmusa173/BizTech-Software-Backend.git"
-  },
-  "bugs": {
-    "url": "https://github.com/ibrahimmusa173/BizTech-Software-Backend/issues"
-  },
-  "homepage": "https://github.com/ibrahimmusa173/BizTech-Software-Backend#readme"
-}
-</file>
-
 <file path="backend/app.js">
 const express = require('express');
-const path = require('path');
-const dotenv = require('dotenv');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const cors = require('cors');
 
-// 1. Load Env Vars (Path points to .env inside backend folder)
-dotenv.config({ path: path.join(__dirname, '.env') });
-
-const connectDB = require('./config/db');
-
-// 2. Import Route Files
+// Import Route Files
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 
-// 3. Connect to Database
-connectDB();
-
 const app = express();
 
-// --- SECURITY MIDDLEWARE (OWASP Top 10) ---
-app.use(helmet());           // Set security headers
-app.use(express.json());     // JSON Body parser
-app.use(mongoSanitize());    // Prevent NoSQL Injection
-app.use(cors());             // Enable Cross-Origin requests
+// --- MIDDLEWARE ---
+app.use(helmet());           
+app.use(express.json());     
+app.use(mongoSanitize());    
+app.use(cors());             
 
 // --- MOUNT ROUTES ---
 app.use('/api/auth', authRoutes);
@@ -987,9 +1005,8 @@ app.use('/api/users', userRoutes);
 // Root route for testing
 app.get('/', (req, res) => res.send('API is running...'));
 
-// Start Server
-const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Secure Server running on port ${PORT}`));
+// Export the app so server.js can use it
+module.exports = app;
 </file>
 
 </files>
