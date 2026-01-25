@@ -1,24 +1,16 @@
-const path = require('path');
-const dotenv = require('dotenv');
+const app = require('./app'); // This imports the app from app.js
 const connectDB = require('./config/db');
-const app = require('./app'); // Import the app setup
+const dotenv = require('dotenv');
 
-// 1. Load Env Vars
-dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config();
 
-// 2. Connect to Database
+// 1. Connect to MongoDB
 connectDB();
 
-// 3. Start Server
+// 2. Choose a port (Try 5000 if 7000 continues to give trouble)
 const PORT = process.env.PORT || 7000;
 
-const server = app.listen(PORT, () => {
-    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-});
-
-// Handle unhandled promise rejections (Optional but recommended)
-process.on('unhandledRejection', (err, promise) => {
-    console.log(`Error: ${err.message}`);
-    // Close server & exit process
-    server.close(() => process.exit(1));
+// 3. Start the server once
+app.listen(PORT, () => {
+    console.log(`Server is finally running on port ${PORT}`);
 });

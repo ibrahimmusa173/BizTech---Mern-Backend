@@ -1,26 +1,26 @@
 const express = require('express');
-const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
+const bodyParser = require('body-parser');
 const cors = require('cors');
-
-// Import Route Files
+const itemRoutes = require('./routes/itemRoutes');
 const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
+const dotenv = require('dotenv');
+
+dotenv.config();
 
 const app = express();
 
-// --- MIDDLEWARE ---
-app.use(helmet());           
-app.use(express.json());     
-app.use(mongoSanitize());    
-app.use(cors());             
+// Middleware
+app.use(bodyParser.json());
+app.use(cors());
 
-// --- MOUNT ROUTES ---
+// API Routes
+app.use('/api', itemRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
 
-// Root route for testing
-app.get('/', (req, res) => res.send('API is running...'));
+app.get('/', (req, res) => {
+    res.send('API is running...');
+});
 
-// Export the app so server.js can use it
+// We EXPORT the app so server.js can use it. 
+// DO NOT add app.listen here.
 module.exports = app;
