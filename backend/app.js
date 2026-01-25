@@ -1,31 +1,26 @@
 const express = require('express');
-const bodyParser = require('body-parser');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
 const cors = require('cors');
-const itemRoutes = require('./routes/itemRoutes');
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes'); // Import User routes
-const dotenv = require('dotenv');
 
-dotenv.config();
+// Import Route Files
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
 
 const app = express();
-const port = 7000;
 
-// Middleware
-app.use(bodyParser.json());
-app.use(cors());
+// --- MIDDLEWARE ---
+app.use(helmet());           
+app.use(express.json());     
+app.use(mongoSanitize());    
+app.use(cors());             
 
-// API Routes
-app.use('/api', itemRoutes);
+// --- MOUNT ROUTES ---
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes); // Link user routes to /api/users
+app.use('/api/users', userRoutes);
 
-// Root route
-app.get('/', (req, res) => {
-    res.send('Server is running and ready for API requests!');
-});
+// Root route for testing
+app.get('/', (req, res) => res.send('API is running...'));
 
-// Start the server
-app.listen(port, () => console.log(`Server is running on port ${port}`));
-
+// Export the app so server.js can use it
 module.exports = app;

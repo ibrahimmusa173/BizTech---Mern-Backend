@@ -51,7 +51,6 @@ backend/models/User.js
 backend/repomix-output.xml
 backend/routes/authRoutes.js
 backend/routes/userRoutes.js
-backend/server.js
 backend/utils/emailService.js
 package.json
 README.md
@@ -93,31 +92,20 @@ dist-ssr
 *.sw?
 </file>
 
-<file path="backend/server.js">
-const path = require('path');
-const dotenv = require('dotenv');
-const connectDB = require('./config/db');
-const app = require('./app'); // Import the app setup
+<file path="backend/config/db.js">
+const mongoose = require('mongoose');
 
-// 1. Load Env Vars
-dotenv.config({ path: path.join(__dirname, '.env') });
+const connectDB = async () => {
+    try {
+        const conn = await mongoose.connect(process.env.MONGO_URI);
+        console.log(`MongoDB Connected: ${conn.connection.host}`);
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exit(1);
+    }
+};
 
-// 2. Connect to Database
-connectDB();
-
-// 3. Start Server
-const PORT = process.env.PORT || 7000;
-
-const server = app.listen(PORT, () => {
-    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-});
-
-// Handle unhandled promise rejections (Optional but recommended)
-process.on('unhandledRejection', (err, promise) => {
-    console.log(`Error: ${err.message}`);
-    // Close server & exit process
-    server.close(() => process.exit(1));
-});
+module.exports = connectDB;
 </file>
 
 <file path="backend/repomix-output.xml">
@@ -668,22 +656,6 @@ module.exports = { sendPasswordResetEmail };
 this is only backend till api's
 </file>
 
-<file path="backend/config/db.js">
-const mongoose = require('mongoose');
-
-const connectDB = async () => {
-    try {
-        const conn = await mongoose.connect(process.env.MONGO_URI);
-        console.log(`MongoDB Connected: ${conn.connection.host}`);
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
-        process.exit(1);
-    }
-};
-
-module.exports = connectDB;
-</file>
-
 <file path="backend/routes/userRoutes.js">
 const express = require('express');
 const router = express.Router();
@@ -699,6 +671,114 @@ router.get('/vendor-data', protect, authorize('Vendor'), (req, res) => {
 });
 
 module.exports = router;
+</file>
+
+<file path="backend/controllers/authController.js">
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const sendEmail = require('../utils/emailService');
+
+const generateToken = (id) => {
+    return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+};
+
+// @desc Register new user
+exports.registerUser = async (req, res) => {
+    const { name, companyName, email, password, role } = req.body;
+    try {
+        const userExists = await User.findOne({ email });
+        if (userExists) return res.status(400).json({ message: 'User already exists' });
+
+        const user = await User.create({ name, companyName, email, password, role });
+        res.status(201).json({
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            token: generateToken(user._id)
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc Auth user & get token
+exports.loginUser = async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const user = await User.findOne({ email });
+        if (user && (await user.matchPassword(password))) {
+            res.json({
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                token: generateToken(user._id)
+            });
+        } else {
+            res.status(401).json({ message: 'Invalid email or password' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc Get user profile
+exports.getUserProfile = async (req, res) => {
+    const user = await User.findById(req.user._id);
+    if (user) {
+        res.json({ _id: user._id, name: user.name, email: user.email, role: user.role, companyName: user.companyName });
+    } else {
+        res.status(404).json({ message: 'User not found' });
+    }
+};
+
+// --- NEW FUNCTIONS START HERE ---
+
+// @desc Forgot Password
+exports.forgotPassword = async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.body.email });
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+        user.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 mins
+
+        await user.save({ validateBeforeSave: false });
+
+        const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+        const message = `Reset your password here: ${resetUrl}`;
+
+        await sendEmail({ email: user.email, subject: 'Password Reset', message });
+        res.status(200).json({ message: "Token sent to email" });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc Reset Password
+exports.resetPassword = async (req, res) => {
+    try {
+        const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+        const user = await User.findOne({
+            resetPasswordToken: hashedToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) return res.status(400).json({ message: "Invalid or expired token" });
+
+        user.password = req.body.password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        res.status(200).json({ message: "Password updated successfully" });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
 </file>
 
 <file path="backend/utils/emailService.js">
@@ -741,172 +821,6 @@ EMAIL_PASS=dc68930b7e97b6
 EMAIL_FROM=support@biztech.com
 </file>
 
-<file path="backend/controllers/authController.js">
-// backend/controllers/authController.js
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken'); // For authentication tokens
-const crypto = require('crypto');     // For generating tokens
-const { sendPasswordResetEmail } = require('../utils/emailService'); // Import email service
-
-const authController = {
-    // Register a new user
-    register: (req, res) => {
-        const { name, company_name, email, password, user_type } = req.body;
-
-        // Basic validation
-        if (!name || !email || !password || !user_type) {
-            return res.status(400).send({ message: "All required fields must be provided." });
-        }
-        if (!['client', 'bidder', 'admin'].includes(user_type)) {
-            return res.status(400).send({ message: "Invalid user type." });
-        }
-
-        User.findByEmail(email, (err, users) => {
-            if (err) {
-                console.error('Error during registration (findByEmail):', err);
-                return res.status(500).send({ message: "Server error during registration." });
-            }
-            if (users.length > 0) {
-                return res.status(409).send({ message: "Email already registered." });
-            }
-
-            User.create({ name, company_name, email, password, user_type }, (err, result) => {
-                if (err) {
-                    console.error('Error during registration (create user):', err);
-                    return res.status(500).send({ message: "Error registering user." });
-                }
-                res.status(201).send({ message: "User registered successfully!", userId: result.insertId });
-            });
-        });
-    },
-
-    // Login user
-    login: (req, res) => {
-        const { email, password } = req.body;
-
-        User.findByEmail(email, (err, users) => {
-            if (err) {
-                console.error('Error during login (findByEmail):', err);
-                return res.status(500).send({ message: "Server error during login." });
-            }
-            if (users.length === 0) {
-                return res.status(401).send({ message: "Invalid credentials." });
-            }
-
-            const user = users[0];
-            bcrypt.compare(password, user.password, (err, isMatch) => {
-                if (err) {
-                    console.error('Error during login (bcrypt.compare):', err);
-                    return res.status(500).send({ message: "Server error during login." });
-                }
-                if (!isMatch) {
-                    return res.status(401).send({ message: "Invalid credentials." });
-                }
-
-                const token = jwt.sign(
-                    { id: user.id, email: user.email, user_type: user.user_type },
-                    process.env.JWT_SECRET || 'supersecretjwtkey',
-                    { expiresIn: '1h' }
-                );
-
-                res.status(200).send({ 
-                    message: "Logged in successfully!", 
-                    token, 
-                    user: { id: user.id, name: user.name, email: user.email, user_type: user.user_type } 
-                });
-            });
-        });
-    },
-
-    // Update Name and Company Name
-    updateProfile: (req, res) => {
-        const { id } = req.params;
-        const { name, company_name } = req.body;
-
-        if (!name || !company_name) {
-            return res.status(400).send({ message: "Name and Company Name are required." });
-        }
-
-        User.updateProfile(id, name, company_name, (err, result) => {
-            if (err) {
-                console.error('Error updating profile:', err);
-                return res.status(500).send({ message: "Error updating profile." });
-            }
-            if (result.affectedRows === 0) {
-                return res.status(404).send({ message: "User not found." });
-            }
-            res.status(200).send({ message: "Profile updated successfully!" });
-        });
-    },
-
-    // Forgot Password
-    forgotPassword: (req, res) => {
-        const { email } = req.body;
-        if (!email) {
-            return res.status(400).send({ message: "Email is required." });
-        }
-
-        User.findByEmail(email, async (err, users) => {
-            if (err) {
-                console.error('Error during forgotPassword (findByEmail):', err);
-                return res.status(200).send({ message: "If an account with that email exists, a password reset link has been sent." });
-            }
-            if (users.length === 0) {
-                return res.status(200).send({ message: "If an account with that email exists, a password reset link has been sent." });
-            }
-
-            const user = users[0];
-            const resetToken = crypto.randomBytes(32).toString('hex');
-            const resetExpire = new Date(Date.now() + 3600000); // 1 hour
-
-            User.saveResetToken(user.email, resetToken, resetExpire, async (err) => {
-                if (err) {
-                    console.error('Error saving reset token:', err);
-                    return res.status(500).send({ message: "Error initiating password reset." });
-                }
-
-                const emailSent = await sendPasswordResetEmail(user.email, resetToken);
-
-                if (emailSent) {
-                    res.status(200).send({ message: "Password reset link sent to your email!" });
-                } else {
-                    res.status(500).send({ message: "Failed to send password reset email." });
-                }
-            });
-        });
-    },
-
-    // Reset Password
-    resetPassword: (req, res) => {
-        const { token } = req.params;
-        const { newPassword } = req.body;
-
-        if (!newPassword || newPassword.length < 6) {
-            return res.status(400).send({ message: "New password must be at least 6 characters long." });
-        }
-
-        User.findByResetToken(token, (err, user) => {
-            if (err) {
-                if (err.kind === "not_found") {
-                    return res.status(400).send({ message: "Password reset token is invalid or has expired." });
-                }
-                return res.status(500).send({ message: "Server error during password reset." });
-            }
-
-            User.updatePassword(user.id, newPassword, (err) => {
-                if (err) {
-                    return res.status(500).send({ message: "Error resetting password." });
-                }
-                res.status(200).send({ message: "Password has been successfully reset!" });
-            });
-        });
-    },
-};
-
-module.exports = authController;
-</file>
-
 <file path="backend/middleware/authMiddleware.js">
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -941,98 +855,56 @@ module.exports = { protect, authorize };
 </file>
 
 <file path="backend/routes/authRoutes.js">
-// backend/routes/authRoutes.js
 const express = require('express');
-const authController = require('../controllers/authController');
-
 const router = express.Router();
+const { 
+    registerUser, 
+    loginUser, 
+    forgotPassword, 
+    resetPassword 
+} = require('../controllers/authController');
 
-router.post("/register", authController.register);
-router.post("/login", authController.login);
-router.post("/forgot-password", authController.forgotPassword);
-router.post("/reset-password/:token", authController.resetPassword);
-
-// New route for updating Name and Company Name
-router.put("/update-profile/:id", authController.updateProfile);
+// Public Routes
+router.post('/register', registerUser);
+router.post('/login', loginUser);
+router.post('/forgot-password', forgotPassword); // Line 11
+router.post('/reset-password/:token', resetPassword);
 
 module.exports = router;
 </file>
 
 <file path="backend/models/User.js">
-// backend/models/User.js
-const db = require('../config/db'); // Import the database connection
-const bcrypt = require('bcryptjs'); // For password hashing
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-const User = {
-    // Finds a user by email
-    findByEmail: (email, callback) => {
-        db.query("SELECT * FROM users WHERE email = ?", [email], callback);
+const userSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    companyName: { type: String },
+    email: { type: String, required: true, unique: true, lowercase: true },
+    password: { type: String, required: true },
+    role: { 
+        type: String, 
+        enum: ['Client', 'Vendor', 'Admin'], 
+        default: 'Client' 
     },
+    // Add these two fields for password recovery
+    resetPasswordToken: String,
+    resetPasswordExpire: Date
+}, { timestamps: true });
 
-    // Creates a new user with hashed password
-    create: (userData, callback) => {
-        const { name, company_name, email, password, user_type } = userData;
-        // Hash password before storing
-        bcrypt.hash(password, 10, (err, hashedPassword) => {
-            if (err) return callback(err);
+userSchema.pre('save', async function() {
+    if (!this.isModified('password')) {
+        return;
+    }
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+});
 
-            const sql = "INSERT INTO users (name, company_name, email, password, user_type) VALUES (?, ?, ?, ?, ?)";
-            db.query(sql, [name, company_name, email, hashedPassword, user_type], callback);
-        });
-    },
-
-    // New method to update Name and Company Name
-    updateProfile: (id, name, company_name, callback) => {
-        const sql = "UPDATE users SET name = ?, company_name = ? WHERE id = ?";
-        db.query(sql, [name, company_name, id], callback);
-    },
-
-    getAll: (callback) => {
-        db.query("SELECT id, name, company_name, email, user_type FROM users", callback);
-    },
-
-    saveResetToken: (email, token, expire, callback) => {
-        db.query(
-            "UPDATE users SET resetPasswordToken = ?, resetPasswordExpire = ? WHERE email = ?",
-            [token, expire, email],
-            (err, result) => {
-                if (err) { callback(err); return; }
-                if (result.affectedRows === 0) { callback({ kind: "not_found" }); return; }
-                callback(null, result);
-            }
-        );
-    },
-
-    findByResetToken: (token, callback) => {
-        db.query(
-            "SELECT * FROM users WHERE resetPasswordToken = ? AND resetPasswordExpire > NOW()",
-            [token],
-            (err, rows) => {
-                if (err) { callback(err); return; }
-                if (rows.length) { callback(null, rows[0]); return; }
-                callback({ kind: "not_found" });
-            }
-        );
-    },
-
-    updatePassword: (userId, newPassword, callback) => {
-        bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
-            if (err) return callback(err);
-
-            db.query(
-                "UPDATE users SET password = ?, resetPasswordToken = NULL, resetPasswordExpire = NULL WHERE id = ?",
-                [hashedPassword, userId],
-                (err, result) => {
-                    if (err) { callback(err); return; }
-                    if (result.affectedRows === 0) { callback({ kind: "not_found" }); return; }
-                    callback(null, result);
-                }
-            );
-        });
-    },
+userSchema.methods.matchPassword = async function(enteredPassword) {
+    return await bcrypt.compare(enteredPassword, this.password);
 };
 
-module.exports = User;
+module.exports = mongoose.model('User', userSchema);
 </file>
 
 <file path="package.json">
@@ -1042,8 +914,8 @@ module.exports = User;
   "description": "A backend-only application for managing items and user authentication.",
   "main": "backend/app.js",
   "scripts": {
-    "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js"
+    "start": "node backend/app.js",
+    "dev": "nodemon backend/app.js"
   },
   "keywords": [
     "express",
@@ -1082,21 +954,31 @@ module.exports = User;
 
 <file path="backend/app.js">
 const express = require('express');
+const path = require('path');
+const dotenv = require('dotenv');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const cors = require('cors');
 
-// Import Route Files
+// 1. Load Env Vars (Path points to .env inside backend folder)
+dotenv.config({ path: path.join(__dirname, '.env') });
+
+const connectDB = require('./config/db');
+
+// 2. Import Route Files
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 
+// 3. Connect to Database
+connectDB();
+
 const app = express();
 
-// --- MIDDLEWARE ---
-app.use(helmet());           
-app.use(express.json());     
-app.use(mongoSanitize());    
-app.use(cors());             
+// --- SECURITY MIDDLEWARE (OWASP Top 10) ---
+app.use(helmet());           // Set security headers
+app.use(express.json());     // JSON Body parser
+app.use(mongoSanitize());    // Prevent NoSQL Injection
+app.use(cors());             // Enable Cross-Origin requests
 
 // --- MOUNT ROUTES ---
 app.use('/api/auth', authRoutes);
@@ -1105,8 +987,9 @@ app.use('/api/users', userRoutes);
 // Root route for testing
 app.get('/', (req, res) => res.send('API is running...'));
 
-// Export the app so server.js can use it
-module.exports = app;
+// Start Server
+const PORT = process.env.PORT || 7000;
+app.listen(PORT, () => console.log(`Secure Server running on port ${PORT}`));
 </file>
 
 </files>
