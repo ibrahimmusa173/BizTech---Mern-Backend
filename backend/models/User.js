@@ -11,12 +11,17 @@ const userSchema = new mongoose.Schema({
     resetPasswordExpire: Date
 }, { timestamps: true });
 
-// Hash password before saving to DB
-userSchema.pre('save', async function (next) {
-    if (!this.isModified('password')) return next();
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
+// CORRECTED: Removed 'next' because we are using an async function
+userSchema.pre('save', async function () {
+    // Only hash the password if it has been modified (or is new)
+    if (!this.isModified('password')) return;
+
+    try {
+        const salt = await bcrypt.genSalt(10);
+        this.password = await bcrypt.hash(this.password, salt);
+    } catch (error) {
+        throw new Error(error);
+    }
 });
 
 // Method to compare password
