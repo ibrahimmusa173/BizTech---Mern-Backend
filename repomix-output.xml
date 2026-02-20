@@ -46,10 +46,18 @@ backend/.env
 backend/app.js
 backend/config/db.js
 backend/controllers/authController.js
+backend/controllers/proposalController.js
+backend/controllers/tenderController.js
 backend/middleware/authMiddleware.js
+backend/models/Notification.js
+backend/models/Proposal.js
+backend/models/Tender.js
 backend/models/User.js
 backend/repomix-output.xml
 backend/routes/authRoutes.js
+backend/routes/notificationRoutes.js
+backend/routes/proposalRoutes.js
+backend/routes/tenderRoutes.js
 backend/server.js
 backend/utils/emailService.js
 package.json
@@ -632,6 +640,23 @@ module.exports = { sendPasswordResetEmail };
 </files>
 </file>
 
+<file path="backend/routes/notificationRoutes.js">
+const express = require('express');
+const {
+    getNotifications,
+    markAsRead
+} = require('../controllers/notificationController');
+
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.get('/notifications', protect, getNotifications);
+router.put('/notifications/:id/read', protect, markAsRead);
+
+module.exports = router;
+</file>
+
 <file path="backend/server.js">
 const app = require('./app'); // This imports the app from app.js
 const connectDB = require('./config/db');
@@ -657,6 +682,31 @@ app.listen(PORT, () => {
 
 <file path="Spare/contex">
 this is only backend till api's
+</file>
+
+<file path="backend/models/Notification.js">
+const mongoose = require('mongoose');
+
+const notificationSchema = new mongoose.Schema(
+  {
+    user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    message: {
+      type: String,
+      required: true,
+    },
+    is_read: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Notification', notificationSchema);
 </file>
 
 <file path="backend/config/db.js">
@@ -790,6 +840,65 @@ exports.authorize = (...roles) => {
         next();
     };
 };
+</file>
+
+<file path="backend/models/Proposal.js">
+const mongoose = require('mongoose');
+
+const proposalSchema = new mongoose.Schema(
+  {
+    tender_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Tender',
+      required: true,
+    },
+    vendor_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    cover_letter: String,
+    proposed_solution: String,
+    pricing: String,
+    attachments: [String],
+    status: {
+      type: String,
+      enum: ['pending', 'accepted', 'rejected', 'withdrawn'],
+      default: 'pending',
+    },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Proposal', proposalSchema);
+</file>
+
+<file path="backend/routes/tenderRoutes.js">
+const express = require('express');
+const {
+    createTender,
+    getClientTenders,
+    closeTender,
+    updateDeadline,
+    getAllOpenTenders,
+    getTenderDetails
+} = require('../controllers/tenderController');
+
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+// Client Routes
+router.post('/tenders', protect, createTender);
+router.get('/tenders/client', protect, getClientTenders);
+router.put('/tenders/:id/close', protect, closeTender);
+router.put('/tenders/:id/deadline', protect, updateDeadline);
+
+// Vendor/Public Routes
+router.get('/tenders', protect, getAllOpenTenders);
+router.get('/tenders/:id', protect, getTenderDetails);
+
+module.exports = router;
 </file>
 
 <file path="backend/controllers/authController.js">
@@ -956,11 +1065,131 @@ exports.resetPassword = async (req, res) => {
 };
 </file>
 
+<file path="backend/controllers/tenderController.js">
+const Tender = require('../models/Tender');
+
+const tenderController = {
+    // CLIENT: Create a new tender
+    createTender: (req, res) => {
+        if (req.user.user_type !== 'client') return res.status(403).send({ message: "Only clients can create tenders." });
+
+        const tenderData = { ...req.body, client_id: req.user.id };
+        Tender.create(tenderData, (err, result) => {
+            if (err) return res.status(500).send({ message: "Error creating tender.", error: err.message });
+            res.status(201).send({ message: "Tender created successfully", tenderId: result.insertId });
+        });
+    },
+
+    // CLIENT: Get all tenders for a specific client (Dashboard)
+    getClientTenders: (req, res) => {
+        Tender.getByClientId(req.user.id, (err, rows) => {
+            if (err) return res.status(500).send({ message: "Error fetching your tenders.", error: err.message });
+            res.status(200).send(rows);
+        });
+    },
+
+    // CLIENT: Close a tender
+    closeTender: (req, res) => {
+        Tender.closeTender(req.params.id, req.user.id, (err, result) => {
+            if (err) return res.status(500).send({ message: "Error closing tender.", error: err.message });
+            res.status(200).send({ message: "Tender closed successfully." });
+        });
+    },
+
+    // CLIENT: Update tender deadline
+    updateDeadline: (req, res) => {
+        const { deadline } = req.body;
+        Tender.updateDeadline(req.params.id, req.user.id, deadline, (err, result) => {
+            if (err) return res.status(500).send({ message: "Error updating deadline.", error: err.message });
+            res.status(200).send({ message: "Tender deadline updated successfully." });
+        });
+    },
+
+    // VENDOR/PUBLIC: View all open tenders (Dashboard)
+    getAllOpenTenders: (req, res) => {
+        Tender.getAllOpen((err, rows) => {
+            if (err) return res.status(500).send({ message: "Error fetching tenders.", error: err.message });
+            res.status(200).send(rows);
+        });
+    },
+
+    // VENDOR/PUBLIC: View single tender details
+    getTenderDetails: (req, res) => {
+        Tender.getById(req.params.id, (err, rows) => {
+            if (err) return res.status(500).send({ message: "Error fetching tender details.", error: err.message });
+            if (rows.length === 0) return res.status(404).send({ message: "Tender not found." });
+            res.status(200).send(rows);
+        });
+    }
+};
+
+module.exports = tenderController;
+</file>
+
+<file path="backend/routes/proposalRoutes.js">
+const express = require('express');
+const {
+    submitProposal,
+    getVendorProposals,
+    withdrawProposal,
+    getTenderProposals,
+    updateProposalStatus
+} = require('../controllers/proposalController');
+
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+// Vendor Routes
+router.post('/proposals', protect, submitProposal);
+router.get('/proposals/vendor', protect, getVendorProposals);
+router.put('/proposals/:id/withdraw', protect, withdrawProposal);
+
+// Client Routes
+router.get('/tenders/:tenderId/proposals', protect, getTenderProposals);
+router.put('/proposals/:id/status', protect, updateProposalStatus);
+
+module.exports = router;
+</file>
+
+<file path="backend/models/Tender.js">
+const mongoose = require('mongoose');
+
+const tenderSchema = new mongoose.Schema(
+  {
+    client_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    title: {
+      type: String,
+      required: true,
+    },
+    description: String,
+    category: String,
+    budget_range: String,
+    deadline: Date,
+    location: String,
+    contact_info: String,
+    attachments: [String],
+    status: {
+      type: String,
+      enum: ['open', 'closed'],
+      default: 'open',
+    },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Tender', tenderSchema);
+</file>
+
 <file path="package.json">
 {
   "name": "backend-only-app",
   "version": "1.0.0",
-  "description": "A backend-only application for managing items and user authentication.",
+  "description": "A backend-only application using Express and MongoDB.",
   "main": "backend/app.js",
   "scripts": {
     "start": "node backend/server.js",
@@ -968,7 +1197,8 @@ exports.resetPassword = async (req, res) => {
   },
   "keywords": [
     "express",
-    "mysql",
+    "mongodb",
+    "mongoose",
     "auth",
     "api"
   ],
@@ -1029,6 +1259,86 @@ router.get('/profile', protect, getProfile);     // View profile
 router.put('/profile', protect, updateProfile);  // Update profile
 
 module.exports = router;
+</file>
+
+<file path="backend/controllers/proposalController.js">
+const Proposal = require('../models/Proposal');
+const Tender = require('../models/Tender');
+const Notification = require('../models/Notification');
+
+const proposalController = {
+    // VENDOR: Submit Proposal
+    submitProposal: (req, res) => {
+        if (req.user.user_type !== 'bidder') return res.status(403).send({ message: "Only vendors/bidders can submit proposals." });
+
+        const proposalData = { ...req.body, vendor_id: req.user.id };
+        
+        Proposal.create(proposalData, (err, result) => {
+            if (err) return res.status(500).send({ message: "Error submitting proposal.", error: err.message });
+
+            // Notify Client about new proposal
+            Tender.getById(proposalData.tender_id, (err, tenderRows) => {
+                if (!err && tenderRows.length > 0) {
+                    const clientId = tenderRows.client_id;
+                    Notification.create(clientId, `A new proposal has been submitted for your tender: ${tenderRows.title}`, () => {});
+                }
+            });
+
+            res.status(201).send({ message: "Proposal submitted successfully", proposalId: result.insertId });
+        });
+    },
+
+    // VENDOR: View their own submitted proposals (Dashboard)
+    getVendorProposals: (req, res) => {
+        Proposal.getByVendorId(req.user.id, (err, rows) => {
+            if (err) return res.status(500).send({ message: "Error fetching your proposals.", error: err.message });
+            res.status(200).send(rows);
+        });
+    },
+
+    // VENDOR: Withdraw a proposal
+    withdrawProposal: (req, res) => {
+        Proposal.withdraw(req.params.id, req.user.id, (err, result) => {
+            if (err) return res.status(500).send({ message: "Error withdrawing proposal.", error: err.message });
+            res.status(200).send({ message: "Proposal withdrawn successfully." });
+        });
+    },
+
+    // CLIENT: View proposals for their tender
+    getTenderProposals: (req, res) => {
+        Proposal.getByTenderId(req.params.tenderId, (err, rows) => {
+            if (err) return res.status(500).send({ message: "Error fetching proposals.", error: err.message });
+            res.status(200).send(rows);
+        });
+    },
+
+    // CLIENT: Accept or Reject a proposal
+    updateProposalStatus: (req, res) => {
+        const { status } = req.body; // 'accepted' or 'rejected'
+        const proposalId = req.params.id;
+
+        const validStatuses = ['accepted', 'rejected'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).send({ message: "Invalid status." });
+        }
+
+        Proposal.updateStatus(proposalId, status, (err, result) => {
+            if (err) return res.status(500).send({ message: "Error updating status.", error: err.message });
+
+            // Notify Vendor about status update
+            Proposal.getById(proposalId, (err, propRows) => {
+                if (!err && propRows.length > 0) {
+                    const vendorId = propRows.vendor_id;
+                    Notification.create(vendorId, `Your proposal status has been updated to: ${status}`, () => {});
+                }
+            });
+
+            res.status(200).send({ message: `Proposal marked as ${status}.` });
+        });
+    }
+};
+
+module.exports = proposalController;
 </file>
 
 <file path="backend/models/User.js">
@@ -1115,22 +1425,28 @@ module.exports = mongoose.model('User', userSchema);
 
 <file path="backend/app.js">
 const express = require('express');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const dotenv = require('dotenv');
+
 // Import routes
 const authRoutes = require('./routes/authRoutes');
+const tenderRoutes = require('./routes/tenderRoutes');
+const proposalRoutes = require('./routes/proposalRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 dotenv.config();
 
 const app = express();
 
 // Middleware
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(cors());
 
 // Mount routers
 app.use('/api/auth', authRoutes);
+app.use('/api', tenderRoutes);
+app.use('/api', proposalRoutes);
+app.use('/api', notificationRoutes);
 
 app.get('/', (req, res) => {
     res.send('API is running...');
