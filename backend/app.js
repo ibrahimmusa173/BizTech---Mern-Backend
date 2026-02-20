@@ -1,9 +1,9 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const itemRoutes = require('./routes/itemRoutes');
-const authRoutes = require('./routes/authRoutes');
 const dotenv = require('dotenv');
+// Import routes
+const authRoutes = require('./routes/authRoutes');
 
 dotenv.config();
 
@@ -13,14 +13,11 @@ const app = express();
 app.use(bodyParser.json());
 app.use(cors());
 
-// API Routes
-app.use('/api', itemRoutes);
+// Mount routers
 app.use('/api/auth', authRoutes);
 
 app.get('/', (req, res) => {
     res.send('API is running...');
 });
 
-// We EXPORT the app so server.js can use it. 
-// DO NOT add app.listen here.
 module.exports = app;
