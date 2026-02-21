@@ -46,6 +46,7 @@ backend/.env
 backend/app.js
 backend/config/db.js
 backend/controllers/authController.js
+backend/controllers/notificationController.js
 backend/controllers/proposalController.js
 backend/controllers/tenderController.js
 backend/middleware/authMiddleware.js
@@ -640,23 +641,6 @@ module.exports = { sendPasswordResetEmail };
 </files>
 </file>
 
-<file path="backend/routes/notificationRoutes.js">
-const express = require('express');
-const {
-    getNotifications,
-    markAsRead
-} = require('../controllers/notificationController');
-
-const { protect } = require('../middleware/authMiddleware');
-
-const router = express.Router();
-
-router.get('/notifications', protect, getNotifications);
-router.put('/notifications/:id/read', protect, markAsRead);
-
-module.exports = router;
-</file>
-
 <file path="backend/server.js">
 const app = require('./app'); // This imports the app from app.js
 const connectDB = require('./config/db');
@@ -676,12 +660,67 @@ app.listen(PORT, () => {
 });
 </file>
 
+<file path="backend/routes/notificationRoutes.js">
+const express = require('express');
+const {
+    getNotifications,
+    markAsRead
+} = require('../controllers/notificationController');
+
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.get('/notifications', protect, getNotifications);
+router.put('/notifications/:id/read', protect, markAsRead);
+
+module.exports = router;
+</file>
+
 <file path="README.md">
 # Mern-Backend
 </file>
 
 <file path="Spare/contex">
 this is only backend till api's
+</file>
+
+<file path="backend/config/db.js">
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+    try {
+        const conn = await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/practice_db');
+        console.log(`MongoDB Connected: ${conn.connection.host}`);
+    } catch (error) {
+        console.error(`Error: ${error.message}`);
+        process.exit(1);
+    }
+};
+
+module.exports = connectDB;
+</file>
+
+<file path="backend/controllers/notificationController.js">
+const Notification = require('../models/Notification');
+
+exports.getNotifications = async (req, res) => {
+    try {
+        const notifications = await Notification.find({ user_id: req.user.id }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: notifications });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.markAsRead = async (req, res) => {
+    try {
+        await Notification.findByIdAndUpdate(req.params.id, { is_read: true });
+        res.status(200).json({ success: true, message: "Notification marked as read" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 </file>
 
 <file path="backend/models/Notification.js">
@@ -707,22 +746,6 @@ const notificationSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model('Notification', notificationSchema);
-</file>
-
-<file path="backend/config/db.js">
-const mongoose = require('mongoose');
-
-const connectDB = async () => {
-    try {
-        const conn = await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/practice_db');
-        console.log(`MongoDB Connected: ${conn.connection.host}`);
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
-        process.exit(1);
-    }
-};
-
-module.exports = connectDB;
 </file>
 
 <file path="backend/utils/emailService.js">
@@ -1070,56 +1093,83 @@ const Tender = require('../models/Tender');
 
 const tenderController = {
     // CLIENT: Create a new tender
-    createTender: (req, res) => {
-        if (req.user.user_type !== 'client') return res.status(403).send({ message: "Only clients can create tenders." });
+    createTender: async (req, res) => {
+        try {
+            if (req.user.user_type !== 'client') {
+                return res.status(403).json({ success: false, message: "Only clients can create tenders." });
+            }
 
-        const tenderData = { ...req.body, client_id: req.user.id };
-        Tender.create(tenderData, (err, result) => {
-            if (err) return res.status(500).send({ message: "Error creating tender.", error: err.message });
-            res.status(201).send({ message: "Tender created successfully", tenderId: result.insertId });
-        });
+            const tender = await Tender.create({
+                ...req.body,
+                client_id: req.user.id
+            });
+
+            res.status(201).json({ success: true, message: "Tender created successfully", tenderId: tender._id });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error creating tender.", error: error.message });
+        }
     },
 
-    // CLIENT: Get all tenders for a specific client (Dashboard)
-    getClientTenders: (req, res) => {
-        Tender.getByClientId(req.user.id, (err, rows) => {
-            if (err) return res.status(500).send({ message: "Error fetching your tenders.", error: err.message });
-            res.status(200).send(rows);
-        });
+    // CLIENT: Get all tenders for a specific client
+    getClientTenders: async (req, res) => {
+        try {
+            const tenders = await Tender.find({ client_id: req.user.id });
+            res.status(200).json({ success: true, data: tenders });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error fetching your tenders.", error: error.message });
+        }
     },
 
     // CLIENT: Close a tender
-    closeTender: (req, res) => {
-        Tender.closeTender(req.params.id, req.user.id, (err, result) => {
-            if (err) return res.status(500).send({ message: "Error closing tender.", error: err.message });
-            res.status(200).send({ message: "Tender closed successfully." });
-        });
+    closeTender: async (req, res) => {
+        try {
+            const tender = await Tender.findOneAndUpdate(
+                { _id: req.params.id, client_id: req.user.id },
+                { status: 'closed' },
+                { new: true }
+            );
+            if (!tender) return res.status(404).json({ message: "Tender not found or unauthorized." });
+            res.status(200).json({ success: true, message: "Tender closed successfully." });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error closing tender.", error: error.message });
+        }
     },
 
     // CLIENT: Update tender deadline
-    updateDeadline: (req, res) => {
-        const { deadline } = req.body;
-        Tender.updateDeadline(req.params.id, req.user.id, deadline, (err, result) => {
-            if (err) return res.status(500).send({ message: "Error updating deadline.", error: err.message });
-            res.status(200).send({ message: "Tender deadline updated successfully." });
-        });
+    updateDeadline: async (req, res) => {
+        try {
+            const { deadline } = req.body;
+            const tender = await Tender.findOneAndUpdate(
+                { _id: req.params.id, client_id: req.user.id },
+                { deadline: deadline },
+                { new: true }
+            );
+            if (!tender) return res.status(404).json({ message: "Tender not found or unauthorized." });
+            res.status(200).json({ success: true, message: "Tender deadline updated successfully." });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error updating deadline.", error: error.message });
+        }
     },
 
-    // VENDOR/PUBLIC: View all open tenders (Dashboard)
-    getAllOpenTenders: (req, res) => {
-        Tender.getAllOpen((err, rows) => {
-            if (err) return res.status(500).send({ message: "Error fetching tenders.", error: err.message });
-            res.status(200).send(rows);
-        });
+    // VENDOR/PUBLIC: View all open tenders
+    getAllOpenTenders: async (req, res) => {
+        try {
+            const tenders = await Tender.find({ status: 'open' });
+            res.status(200).json({ success: true, data: tenders });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error fetching tenders.", error: error.message });
+        }
     },
 
     // VENDOR/PUBLIC: View single tender details
-    getTenderDetails: (req, res) => {
-        Tender.getById(req.params.id, (err, rows) => {
-            if (err) return res.status(500).send({ message: "Error fetching tender details.", error: err.message });
-            if (rows.length === 0) return res.status(404).send({ message: "Tender not found." });
-            res.status(200).send(rows);
-        });
+    getTenderDetails: async (req, res) => {
+        try {
+            const tender = await Tender.findById(req.params.id);
+            if (!tender) return res.status(404).json({ success: false, message: "Tender not found." });
+            res.status(200).json({ success: true, data: tender });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error fetching tender details.", error: error.message });
+        }
     }
 };
 
@@ -1261,86 +1311,6 @@ router.put('/profile', protect, updateProfile);  // Update profile
 module.exports = router;
 </file>
 
-<file path="backend/controllers/proposalController.js">
-const Proposal = require('../models/Proposal');
-const Tender = require('../models/Tender');
-const Notification = require('../models/Notification');
-
-const proposalController = {
-    // VENDOR: Submit Proposal
-    submitProposal: (req, res) => {
-        if (req.user.user_type !== 'bidder') return res.status(403).send({ message: "Only vendors/bidders can submit proposals." });
-
-        const proposalData = { ...req.body, vendor_id: req.user.id };
-        
-        Proposal.create(proposalData, (err, result) => {
-            if (err) return res.status(500).send({ message: "Error submitting proposal.", error: err.message });
-
-            // Notify Client about new proposal
-            Tender.getById(proposalData.tender_id, (err, tenderRows) => {
-                if (!err && tenderRows.length > 0) {
-                    const clientId = tenderRows.client_id;
-                    Notification.create(clientId, `A new proposal has been submitted for your tender: ${tenderRows.title}`, () => {});
-                }
-            });
-
-            res.status(201).send({ message: "Proposal submitted successfully", proposalId: result.insertId });
-        });
-    },
-
-    // VENDOR: View their own submitted proposals (Dashboard)
-    getVendorProposals: (req, res) => {
-        Proposal.getByVendorId(req.user.id, (err, rows) => {
-            if (err) return res.status(500).send({ message: "Error fetching your proposals.", error: err.message });
-            res.status(200).send(rows);
-        });
-    },
-
-    // VENDOR: Withdraw a proposal
-    withdrawProposal: (req, res) => {
-        Proposal.withdraw(req.params.id, req.user.id, (err, result) => {
-            if (err) return res.status(500).send({ message: "Error withdrawing proposal.", error: err.message });
-            res.status(200).send({ message: "Proposal withdrawn successfully." });
-        });
-    },
-
-    // CLIENT: View proposals for their tender
-    getTenderProposals: (req, res) => {
-        Proposal.getByTenderId(req.params.tenderId, (err, rows) => {
-            if (err) return res.status(500).send({ message: "Error fetching proposals.", error: err.message });
-            res.status(200).send(rows);
-        });
-    },
-
-    // CLIENT: Accept or Reject a proposal
-    updateProposalStatus: (req, res) => {
-        const { status } = req.body; // 'accepted' or 'rejected'
-        const proposalId = req.params.id;
-
-        const validStatuses = ['accepted', 'rejected'];
-        if (!validStatuses.includes(status)) {
-            return res.status(400).send({ message: "Invalid status." });
-        }
-
-        Proposal.updateStatus(proposalId, status, (err, result) => {
-            if (err) return res.status(500).send({ message: "Error updating status.", error: err.message });
-
-            // Notify Vendor about status update
-            Proposal.getById(proposalId, (err, propRows) => {
-                if (!err && propRows.length > 0) {
-                    const vendorId = propRows.vendor_id;
-                    Notification.create(vendorId, `Your proposal status has been updated to: ${status}`, () => {});
-                }
-            });
-
-            res.status(200).send({ message: `Proposal marked as ${status}.` });
-        });
-    }
-};
-
-module.exports = proposalController;
-</file>
-
 <file path="backend/models/User.js">
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
@@ -1421,6 +1391,104 @@ userSchema.methods.getResetPasswordToken = function () {
 };
 
 module.exports = mongoose.model('User', userSchema);
+</file>
+
+<file path="backend/controllers/proposalController.js">
+const Proposal = require('../models/Proposal');
+const Tender = require('../models/Tender');
+const Notification = require('../models/Notification');
+
+const proposalController = {
+    // VENDOR: Submit Proposal
+    submitProposal: async (req, res) => {
+        try {
+            // Changed 'bidder' to 'vendor' to match User model enum
+            if (req.user.user_type !== 'vendor') {
+                return res.status(403).json({ message: "Only vendors can submit proposals." });
+            }
+
+            const proposal = await Proposal.create({
+                ...req.body,
+                vendor_id: req.user.id
+            });
+
+            // Notify Client about new proposal
+            const tender = await Tender.findById(req.body.tender_id);
+            if (tender) {
+                await Notification.create({
+                    user_id: tender.client_id,
+                    message: `A new proposal has been submitted for your tender: ${tender.title}`
+                });
+            }
+
+            res.status(201).json({ success: true, message: "Proposal submitted successfully", proposalId: proposal._id });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error submitting proposal.", error: error.message });
+        }
+    },
+
+    // VENDOR: View their own submitted proposals
+    getVendorProposals: async (req, res) => {
+        try {
+            const proposals = await Proposal.find({ vendor_id: req.user.id }).populate('tender_id', 'title');
+            res.status(200).json({ success: true, data: proposals });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error fetching your proposals.", error: error.message });
+        }
+    },
+
+    // VENDOR: Withdraw a proposal
+    withdrawProposal: async (req, res) => {
+        try {
+            const proposal = await Proposal.findOneAndUpdate(
+                { _id: req.params.id, vendor_id: req.user.id },
+                { status: 'withdrawn' },
+                { new: true }
+            );
+            if (!proposal) return res.status(404).json({ message: "Proposal not found or unauthorized." });
+            res.status(200).json({ success: true, message: "Proposal withdrawn successfully." });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error withdrawing proposal.", error: error.message });
+        }
+    },
+
+    // CLIENT: View proposals for their tender
+    getTenderProposals: async (req, res) => {
+        try {
+            const proposals = await Proposal.find({ tender_id: req.params.tenderId }).populate('vendor_id', 'name company_name');
+            res.status(200).json({ success: true, data: proposals });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error fetching proposals.", error: error.message });
+        }
+    },
+
+    // CLIENT: Accept or Reject a proposal
+    updateProposalStatus: async (req, res) => {
+        try {
+            const { status } = req.body; // 'accepted' or 'rejected'
+            const validStatuses = ['accepted', 'rejected'];
+            
+            if (!validStatuses.includes(status)) {
+                return res.status(400).json({ message: "Invalid status." });
+            }
+
+            const proposal = await Proposal.findByIdAndUpdate(req.params.id, { status }, { new: true });
+            if (!proposal) return res.status(404).json({ message: "Proposal not found." });
+
+            // Notify Vendor about status update
+            await Notification.create({
+                user_id: proposal.vendor_id,
+                message: `Your proposal status has been updated to: ${status}`
+            });
+
+            res.status(200).json({ success: true, message: `Proposal marked as ${status}.` });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error updating status.", error: error.message });
+        }
+    }
+};
+
+module.exports = proposalController;
 </file>
 
 <file path="backend/app.js">
