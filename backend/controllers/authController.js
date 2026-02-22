@@ -30,20 +30,57 @@ exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) return res.status(400).json({ success: false, message: 'Please provide email and password' });
+        if (!email || !password) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Please provide email and password' 
+            });
+        }
 
         const user = await User.findOne({ email }).select('+password');
-        if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        if (!user) {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid credentials' 
+            });
+        }
+
+        // ✅ Check if user is blocked
+        if (user.is_blocked) {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Your account has been blocked. Please contact support.' 
+            });
+        }
 
         const isMatch = await user.matchPassword(password);
-        if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        if (!isMatch) {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid credentials' 
+            });
+        }
 
         const token = generateToken(user._id);
-        res.status(200).json({ success: true, token, user: { id: user._id, name: user.name, user_type: user.user_type } });
+
+        res.status(200).json({
+            success: true,
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                user_type: user.user_type
+            }
+        });
+
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
     }
 };
+
 
 exports.getDashboard = async (req, res) => {
     try {

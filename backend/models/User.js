@@ -32,6 +32,12 @@ const userSchema = new mongoose.Schema({
         select: false
     },
 
+  
+    is_blocked: {
+         type: Boolean,
+         default: false
+ },
+
     user_type: { 
         type: String, 
         enum: ['admin', 'client', 'vendor'],
@@ -59,6 +65,8 @@ userSchema.pre('save', async function () {
 userSchema.methods.matchPassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
+
+
 
 
 // Generate reset token

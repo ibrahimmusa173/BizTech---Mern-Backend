@@ -61,14 +61,26 @@ const tenderController = {
     },
 
     // VENDOR/PUBLIC: View all open tenders
-    getAllOpenTenders: async (req, res) => {
-        try {
-            const tenders = await Tender.find({ status: 'open' });
-            res.status(200).json({ success: true, data: tenders });
-        } catch (error) {
-            res.status(500).json({ success: false, message: "Error fetching tenders.", error: error.message });
-        }
-    },
+   getAllOpenTenders: async (req, res) => {
+    try {
+        // ✅ Changed from status: 'open' to status: 'active'
+        const tenders = await Tender.find({ status: 'active' });
+
+        res.status(200).json({
+            success: true,
+            data: tenders
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Error fetching tenders.",
+            error: error.message
+        });
+    }
+},
+
+
 
     // VENDOR/PUBLIC: View single tender details
     getTenderDetails: async (req, res) => {

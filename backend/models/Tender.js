@@ -18,10 +18,11 @@ const tenderSchema = new mongoose.Schema(
     location: String,
     contact_info: String,
     attachments: [String],
+
     status: {
       type: String,
-      enum: ['open', 'closed'],
-      default: 'open',
+      enum: ['pending', 'active', 'rejected', 'closed'],
+      default: 'pending', // Tenders now start as pending for admin approval
     },
   },
   { timestamps: true }
