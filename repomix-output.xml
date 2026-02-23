@@ -45,6 +45,7 @@ The content is organized as follows:
 backend/.env
 backend/app.js
 backend/config/db.js
+backend/controllers/adminController.js
 backend/controllers/authController.js
 backend/controllers/notificationController.js
 backend/controllers/proposalController.js
@@ -55,6 +56,7 @@ backend/models/Proposal.js
 backend/models/Tender.js
 backend/models/User.js
 backend/repomix-output.xml
+backend/routes/adminRoutes.js
 backend/routes/authRoutes.js
 backend/routes/notificationRoutes.js
 backend/routes/proposalRoutes.js
@@ -701,28 +703,6 @@ const connectDB = async () => {
 module.exports = connectDB;
 </file>
 
-<file path="backend/controllers/notificationController.js">
-const Notification = require('../models/Notification');
-
-exports.getNotifications = async (req, res) => {
-    try {
-        const notifications = await Notification.find({ user_id: req.user.id }).sort({ createdAt: -1 });
-        res.status(200).json({ success: true, data: notifications });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-exports.markAsRead = async (req, res) => {
-    try {
-        await Notification.findByIdAndUpdate(req.params.id, { is_read: true });
-        res.status(200).json({ success: true, message: "Notification marked as read" });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-</file>
-
 <file path="backend/models/Notification.js">
 const mongoose = require('mongoose');
 
@@ -746,6 +726,156 @@ const notificationSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model('Notification', notificationSchema);
+</file>
+
+<file path="backend/controllers/notificationController.js">
+const Notification = require('../models/Notification');
+
+exports.getNotifications = async (req, res) => {
+    try {
+        const notifications = await Notification.find({ user_id: req.user.id }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: notifications });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.markAsRead = async (req, res) => {
+    try {
+        await Notification.findByIdAndUpdate(req.params.id, { is_read: true });
+        res.status(200).json({ success: true, message: "Notification marked as read" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+</file>
+
+<file path="backend/controllers/adminController.js">
+const User = require('../models/User');
+const Tender = require('../models/Tender');
+const Proposal = require('../models/Proposal');
+
+const adminController = {
+    // 1) User Management: View and block/unblock accounts
+    getAllUsers: async (req, res) => {
+        try {
+            const users = await User.find({ user_type: { $ne: 'admin' } }).select('-password');
+            res.status(200).json({ success: true, data: users });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    toggleBlockUser: async (req, res) => {
+        try {
+            const user = await User.findById(req.params.id);
+            if (!user) return res.status(404).json({ message: "User not found" });
+
+            user.is_blocked = !user.is_blocked;
+            await user.save();
+
+            const status = user.is_blocked ? "blocked" : "unblocked";
+            res.status(200).json({ success: true, message: `User ${status} successfully` });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    // 2) Tender Management: View all tenders
+    getAllTenders: async (req, res) => {
+        try {
+            const tenders = await Tender.find().populate('client_id', 'name company_name');
+            res.status(200).json({ success: true, data: tenders });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    // 3) Tender Management: Approve or reject tenders
+    updateTenderStatus: async (req, res) => {
+        try {
+            const { status } = req.body; // Expecting 'active' or 'rejected'
+            if (!['active', 'rejected'].includes(status)) {
+                return res.status(400).json({ message: "Invalid status selection" });
+            }
+
+            const tender = await Tender.findByIdAndUpdate(req.params.id, { status }, { new: true });
+            if (!tender) return res.status(404).json({ message: "Tender not found" });
+
+            res.status(200).json({ success: true, message: `Tender ${status} successfully` });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    // 4) Proposal Management: View all proposals
+    getAllProposals: async (req, res) => {
+        try {
+            const proposals = await Proposal.find()
+                .populate('vendor_id', 'name company_name')
+                .populate('tender_id', 'title');
+            res.status(200).json({ success: true, data: proposals });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    // 5) Analytics and Reporting
+    getPlatformStats: async (req, res) => {
+        try {
+            const userCount = await User.countDocuments({ user_type: { $ne: 'admin' } });
+            const tenderCount = await Tender.countDocuments();
+            const proposalCount = await Proposal.countDocuments();
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    totalUsers: userCount,
+                    totalTenders: tenderCount,
+                    totalProposals: proposalCount
+                }
+            });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+};
+
+module.exports = adminController;
+</file>
+
+<file path="backend/routes/adminRoutes.js">
+const express = require('express');
+const router = express.Router();
+const { 
+    getAllUsers, 
+    toggleBlockUser, 
+    getAllTenders, 
+    updateTenderStatus, 
+    getAllProposals, 
+    getPlatformStats 
+} = require('../controllers/adminController');
+const { protect, authorize } = require('../middleware/authMiddleware');
+
+// All routes here require login and admin role
+router.use(protect);
+router.use(authorize('admin'));
+
+// User Management
+router.get('/users', getAllUsers);
+router.put('/users/:id/block', toggleBlockUser);
+
+// Tender Management
+router.get('/tenders', getAllTenders);
+router.put('/tenders/:id/status', updateTenderStatus);
+
+// Proposal Management
+router.get('/proposals', getAllProposals);
+
+// Analytics
+router.get('/stats', getPlatformStats);
+
+module.exports = router;
 </file>
 
 <file path="backend/utils/emailService.js">
@@ -957,20 +1087,57 @@ exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) return res.status(400).json({ success: false, message: 'Please provide email and password' });
+        if (!email || !password) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Please provide email and password' 
+            });
+        }
 
         const user = await User.findOne({ email }).select('+password');
-        if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        if (!user) {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid credentials' 
+            });
+        }
+
+        // ✅ Check if user is blocked
+        if (user.is_blocked) {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Your account has been blocked. Please contact support.' 
+            });
+        }
 
         const isMatch = await user.matchPassword(password);
-        if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        if (!isMatch) {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Invalid credentials' 
+            });
+        }
 
         const token = generateToken(user._id);
-        res.status(200).json({ success: true, token, user: { id: user._id, name: user.name, user_type: user.user_type } });
+
+        res.status(200).json({
+            success: true,
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                user_type: user.user_type
+            }
+        });
+
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
     }
 };
+
 
 exports.getDashboard = async (req, res) => {
     try {
@@ -1088,6 +1255,78 @@ exports.resetPassword = async (req, res) => {
 };
 </file>
 
+<file path="backend/routes/proposalRoutes.js">
+const express = require('express');
+const {
+    submitProposal,
+    getVendorProposals,
+    withdrawProposal,
+    getTenderProposals,
+    updateProposalStatus
+} = require('../controllers/proposalController');
+
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+// Vendor Routes
+router.post('/proposals', protect, submitProposal);
+router.get('/proposals/vendor', protect, getVendorProposals);
+router.put('/proposals/:id/withdraw', protect, withdrawProposal);
+
+// Client Routes
+router.get('/tenders/:tenderId/proposals', protect, getTenderProposals);
+router.put('/proposals/:id/status', protect, updateProposalStatus);
+
+module.exports = router;
+</file>
+
+<file path="package.json">
+{
+  "name": "backend-only-app",
+  "version": "1.0.0",
+  "description": "A backend-only application using Express and MongoDB.",
+  "main": "backend/app.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js"
+  },
+  "keywords": [
+    "express",
+    "mongodb",
+    "mongoose",
+    "auth",
+    "api"
+  ],
+  "author": "Your Name",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "express-mongo-sanitize": "^2.2.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.1.5",
+    "multer": "^2.0.2",
+    "nodemailer": "^6.9.14"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ibrahimmusa173/BizTech-Software-Backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ibrahimmusa173/BizTech-Software-Backend/issues"
+  },
+  "homepage": "https://github.com/ibrahimmusa173/BizTech-Software-Backend#readme"
+}
+</file>
+
 <file path="backend/controllers/tenderController.js">
 const Tender = require('../models/Tender');
 
@@ -1152,14 +1391,26 @@ const tenderController = {
     },
 
     // VENDOR/PUBLIC: View all open tenders
-    getAllOpenTenders: async (req, res) => {
-        try {
-            const tenders = await Tender.find({ status: 'open' });
-            res.status(200).json({ success: true, data: tenders });
-        } catch (error) {
-            res.status(500).json({ success: false, message: "Error fetching tenders.", error: error.message });
-        }
-    },
+   getAllOpenTenders: async (req, res) => {
+    try {
+        // ✅ Changed from status: 'open' to status: 'active'
+        const tenders = await Tender.find({ status: 'active' });
+
+        res.status(200).json({
+            success: true,
+            data: tenders
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Error fetching tenders.",
+            error: error.message
+        });
+    }
+},
+
+
 
     // VENDOR/PUBLIC: View single tender details
     getTenderDetails: async (req, res) => {
@@ -1174,32 +1425,6 @@ const tenderController = {
 };
 
 module.exports = tenderController;
-</file>
-
-<file path="backend/routes/proposalRoutes.js">
-const express = require('express');
-const {
-    submitProposal,
-    getVendorProposals,
-    withdrawProposal,
-    getTenderProposals,
-    updateProposalStatus
-} = require('../controllers/proposalController');
-
-const { protect } = require('../middleware/authMiddleware');
-
-const router = express.Router();
-
-// Vendor Routes
-router.post('/proposals', protect, submitProposal);
-router.get('/proposals/vendor', protect, getVendorProposals);
-router.put('/proposals/:id/withdraw', protect, withdrawProposal);
-
-// Client Routes
-router.get('/tenders/:tenderId/proposals', protect, getTenderProposals);
-router.put('/proposals/:id/status', protect, updateProposalStatus);
-
-module.exports = router;
 </file>
 
 <file path="backend/models/Tender.js">
@@ -1223,62 +1448,17 @@ const tenderSchema = new mongoose.Schema(
     location: String,
     contact_info: String,
     attachments: [String],
+
     status: {
       type: String,
-      enum: ['open', 'closed'],
-      default: 'open',
+      enum: ['pending', 'active', 'rejected', 'closed'],
+      default: 'pending', // Tenders now start as pending for admin approval
     },
   },
   { timestamps: true }
 );
 
 module.exports = mongoose.model('Tender', tenderSchema);
-</file>
-
-<file path="package.json">
-{
-  "name": "backend-only-app",
-  "version": "1.0.0",
-  "description": "A backend-only application using Express and MongoDB.",
-  "main": "backend/app.js",
-  "scripts": {
-    "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js"
-  },
-  "keywords": [
-    "express",
-    "mongodb",
-    "mongoose",
-    "auth",
-    "api"
-  ],
-  "author": "Your Name",
-  "license": "ISC",
-  "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "body-parser": "^1.20.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^4.22.1",
-    "express-mongo-sanitize": "^2.2.0",
-    "helmet": "^8.1.0",
-    "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.1.5",
-    "multer": "^2.0.2",
-    "nodemailer": "^6.9.14"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.11"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ibrahimmusa173/BizTech-Software-Backend.git"
-  },
-  "bugs": {
-    "url": "https://github.com/ibrahimmusa173/BizTech-Software-Backend/issues"
-  },
-  "homepage": "https://github.com/ibrahimmusa173/BizTech-Software-Backend#readme"
-}
 </file>
 
 <file path="backend/routes/authRoutes.js">
@@ -1346,6 +1526,12 @@ const userSchema = new mongoose.Schema({
         select: false
     },
 
+  
+    is_blocked: {
+         type: Boolean,
+         default: false
+ },
+
     user_type: { 
         type: String, 
         enum: ['admin', 'client', 'vendor'],
@@ -1373,6 +1559,8 @@ userSchema.pre('save', async function () {
 userSchema.methods.matchPassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
+
+
 
 
 // Generate reset token
@@ -1501,6 +1689,7 @@ const authRoutes = require('./routes/authRoutes');
 const tenderRoutes = require('./routes/tenderRoutes');
 const proposalRoutes = require('./routes/proposalRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 dotenv.config();
 
@@ -1515,6 +1704,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api', tenderRoutes);
 app.use('/api', proposalRoutes);
 app.use('/api', notificationRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {
     res.send('API is running...');
