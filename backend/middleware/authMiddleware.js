@@ -54,22 +54,16 @@ exports.protect = async (req, res, next) => {
 // ===============================
 // Role Based Authorization
 // ===============================
-exports.authorize = (...roles) => {
-    return (req, res, next) => {
-        if (!req.user) {
-            return res.status(401).json({
-                success: false,
-                message: 'User not authenticated'
-            });
-        }
+exports.authorizeRoles = (...roles) => {
 
-        if (!roles.includes(req.user.user_type)) {
-            return res.status(403).json({
-                success: false,
-                message: `User role '${req.user.user_type}' is not authorized`
-            });
-        }
+ return (req, res, next) => {
 
-        next();
-    };
+   if (!roles.includes(req.user.user_type)) {
+      return res.status(403).json({
+         message: "You are not allowed to perform this action"
+      });
+   }
+
+   next();
+ };
 };
