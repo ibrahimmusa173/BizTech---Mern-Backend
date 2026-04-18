@@ -8,20 +8,20 @@ const {
     updateProposalStatus
 } = require('../controllers/proposalController');
 
-const { protect, authorizeRoles } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 // Vendor Routes
-router.post('/proposals', protect, authorizeRoles('vendor'), submitProposal);
+router.post('/proposals', protect, authorize('vendor'), submitProposal);
 
-router.get('/proposals/vendor', protect, authorizeRoles('vendor'), getVendorProposals);
+router.get('/proposals/vendor', protect, authorize('vendor'), getVendorProposals);
 
-router.put('/proposals/:id/withdraw', protect, authorizeRoles('vendor'), withdrawProposal);
+router.put('/proposals/:id/withdraw', protect, authorize('vendor'), withdrawProposal);
 
 // Client Routes
-router.get('/tenders/:tenderId/proposals', protect, authorizeRoles('client'), getTenderProposals);
+router.get('/tenders/:tenderId/proposals', protect, authorize('client'), getTenderProposals);
 
-router.put('/proposals/:id/status', protect, authorizeRoles('client'), updateProposalStatus);
+router.put('/proposals/:id/status', protect, authorize('client'), updateProposalStatus);
 
 module.exports = router;

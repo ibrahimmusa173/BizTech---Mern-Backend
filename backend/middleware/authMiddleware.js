@@ -1,22 +1,15 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-// ===============================
-// Protect Routes (Verify JWT)
-// ===============================
-exports.protect = async (req, res, next) => {
+// Verify JWT Token
+const protect = async (req, res, next) => {
     try {
         let token;
 
-        // Check Authorization header
-        if (
-            req.headers.authorization &&
-            req.headers.authorization.startsWith('Bearer ')
-        ) {
+        if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
             token = req.headers.authorization.split(' ')[1];
         }
 
-        // If no token
         if (!token) {
             return res.status(401).json({
                 success: false,
@@ -39,7 +32,6 @@ exports.protect = async (req, res, next) => {
 
         // Attach user to request
         req.user = user;
-
         next();
 
     } catch (error) {
@@ -50,20 +42,26 @@ exports.protect = async (req, res, next) => {
     }
 };
 
-
-// ===============================
 // Role Based Authorization
-// ===============================
-exports.authorizeRoles = (...roles) => {
+const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not authenticated'
+            });
+        }
 
- return (req, res, next) => {
+        if (!roles.includes(req.user.user_type)) {
+            return res.status(403).json({
+                success: false,
+                message: `User role '${req.user.user_type}' is not authorized`
+            });
+        }
 
-   if (!roles.includes(req.user.user_type)) {
-      return res.status(403).json({
-         message: "You are not allowed to perform this action"
-      });
-   }
-
-   next();
- };
+        next();
+    };
 };
+
+// Exporting them so they can be destructured in other files
+module.exports = { protect, authorize };
