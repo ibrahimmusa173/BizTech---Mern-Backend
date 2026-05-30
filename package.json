@@ -2,11 +2,11 @@
   "name": "backend-only-app",
   "version": "1.0.0",
   "description": "A backend-only application using Express and MongoDB.",
-  "main": "backend/app.js",
-  "scripts": {
-    "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js"
-  },
+  "main": "backend/server.js",
+"scripts": {
+  "start": "node backend/server.js",
+  "dev": "nodemon backend/server.js"
+},
   "keywords": [
     "express",
     "mongodb",
