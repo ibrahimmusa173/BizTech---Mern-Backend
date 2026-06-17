@@ -31,8 +31,6 @@ app.use(cors({
 // Handle preflight requests
 app.options('*', cors());
 
-app.use(express.json());
-
 // Mount routers
 app.use('/api/auth', authRoutes);
 app.use('/api', tenderRoutes);
