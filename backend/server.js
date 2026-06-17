@@ -10,7 +10,7 @@ connectDB();
 const PORT = process.env.PORT || 7000;
 
 // Only start server if not running on Vercel
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'development') {
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
