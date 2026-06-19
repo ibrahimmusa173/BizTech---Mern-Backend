@@ -14,7 +14,7 @@ const proposalSchema = new mongoose.Schema(
     },
     cover_letter: String,
     proposed_solution: String,
-    pricing: String,
+    amount: Number,
     attachments: [String],
     status: {
       type: String,
