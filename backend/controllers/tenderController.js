@@ -35,17 +35,64 @@ searchTenders: async (req, res) => {
     try {
         const { q } = req.query;
 
-        const filter = { status: 'active' };
-
-        if (q && q.trim() !== '') {
-            filter.$or = [
-                { title: { $regex: q, $options: 'i' } },
-                { description: { $regex: q, $options: 'i' } },
-                { category: { $regex: q, $options: 'i' } }
-            ];
+        // If no query, return all active tenders as before
+        if (!q || q.trim() === '') {
+            const tenders = await Tender.find({ status: 'active' });
+            return res.status(200).json({ success: true, data: tenders });
         }
 
-        const tenders = await Tender.find(filter);
+        // Atlas Search pipeline
+        const tenders = await Tender.aggregate([
+            {
+                $search: {
+                    index: 'default',   // name of your Atlas Search index
+                    compound: {
+                        should: [
+                            {
+                                // autocomplete on title — works as you type
+                                autocomplete: {
+                                    query: q,
+                                    path: 'title',
+                                    fuzzy: { maxEdits: 1 }  // typo tolerance
+                                }
+                            },
+                            {
+                                // autocomplete on category
+                                autocomplete: {
+                                    query: q,
+                                    path: 'category',
+                                    fuzzy: { maxEdits: 1 }
+                                }
+                            },
+                            {
+                                // full text on description
+                                text: {
+                                    query: q,
+                                    path: 'description',
+                                    fuzzy: { maxEdits: 1 }
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                // filter only active tenders after search
+                $match: { status: 'active' }
+            },
+            {
+                // add relevance score to each result
+                $addFields: { score: { $meta: 'searchScore' } }
+            },
+            {
+                // highest relevance first
+                $sort: { score: -1 }
+            },
+            {
+                $limit: 20
+            }
+        ]);
+
         res.status(200).json({ success: true, data: tenders });
 
     } catch (error) {
