@@ -29,6 +29,30 @@ const tenderController = {
         }
     },
 
+
+    // VENDOR: Search tenders by title or description
+searchTenders: async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        const filter = { status: 'active' };
+
+        if (q && q.trim() !== '') {
+            filter.$or = [
+                { title: { $regex: q, $options: 'i' } },
+                { description: { $regex: q, $options: 'i' } },
+                { category: { $regex: q, $options: 'i' } }
+            ];
+        }
+
+        const tenders = await Tender.find(filter);
+        res.status(200).json({ success: true, data: tenders });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Search failed.", error: error.message });
+    }
+},
+
     // CLIENT: Close a tender
     closeTender: async (req, res) => {
         try {

@@ -6,7 +6,8 @@ const {
     closeTender,
     updateDeadline,
     getAllOpenTenders,
-    getTenderDetails
+    getTenderDetails,
+    searchTenders
 } = require('../controllers/tenderController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -24,6 +25,9 @@ router.put('/tenders/:id/deadline', protect, authorize('client'), updateDeadline
 
 // Vendor Routes
 router.get('/tenders', protect, authorize('vendor'), getAllOpenTenders);
+
+// Search tenders by title or description (Vendor only)
+router.get('/tenders/search', protect, authorize('vendor'), searchTenders); 
 
 // Vendor + Client
 router.get('/tenders/:id', protect, authorize('vendor','client'), getTenderDetails);
