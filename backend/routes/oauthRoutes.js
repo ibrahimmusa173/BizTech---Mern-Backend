@@ -1,29 +1,31 @@
-const router = require('express').Router();
+const express = require('express');
 const passport = require('passport');
+const jwt = require('jsonwebtoken');
 
-// Step 1: Redirect to Google
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+const router = express.Router();
 
-// Step 2: Google callback
-router.get('/google/callback', 
-  passport.authenticate('google', { failureRedirect: '/login' }),
+// Step 1: Redirect user to Google login page
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email']
+}));
+
+// Step 2: Google redirects back here with a code
+router.get('/google/callback',
+  passport.authenticate('google', { 
+    session: false,         // we use JWT, not sessions
+    failureRedirect: `${process.env.FRONTEND_URL}/login?error=google_failed`
+  }),
   (req, res) => {
-    // Successful authentication, redirect to frontend dashboard.
-    res.redirect('http://localhost:3000/dashboard');
+    // passport.js has already found/created the user and put them in req.user
+    const token = jwt.sign(
+      { id: req.user._id }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '30d' }
+    );
+
+    // Redirect to frontend with token — frontend will store it
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}&user_type=${req.user.user_type}`);
   }
 );
-
-// Get current user
-router.get('/login/success', (req, res) => {
-  if (req.user) {
-    res.status(200).json({ user: req.user });
-  }
-});
-
-// Logout
-router.get('/logout', (req, res) => {
-  req.logout();
-  res.redirect('http://localhost:3000');
-});
 
 module.exports = router;
