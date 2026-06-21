@@ -1,19 +1,20 @@
 const dotenv = require('dotenv');
-dotenv.config(); // ✅ Must be FIRST before anything reads process.env
+dotenv.config();
 
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
+const { MongoStore } = require('connect-mongo');
 
-require('./config/passport'); // Run passport Google strategy setup
+require('./config/passport');
 
 const authRoutes = require('./routes/authRoutes');
 const tenderRoutes = require('./routes/tenderRoutes');
 const proposalRoutes = require('./routes/proposalRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const oauthRoutes = require('./routes/oauthRoutes'); // Google OAuth routes
+const oauthRoutes = require('./routes/oauthRoutes');
 
 const app = express();
 
@@ -32,13 +33,19 @@ app.use(cors({
 app.use(express.json());
 app.options('*', cors());
 
-// 2. Session (needed for passport internally, even though we use JWT)
+// 2. Session — uses MongoDB store in production, memory in development
 app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback_secret',
   resave: false,
   saveUninitialized: false,
+  store: process.env.NODE_ENV === 'production'
+    ? MongoStore.create({
+        mongoUrl: process.env.MONGO_URI,
+        ttl: 60 * 10 // 10 minutes — enough for OAuth handshake
+      })
+    : undefined, // default MemoryStore for local dev
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production',   // HTTPS only in production
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 24 * 60 * 60 * 1000
   }
@@ -49,8 +56,8 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // 4. Routes
-app.use('/auth', oauthRoutes);         // Google OAuth: /auth/google, /auth/google/callback
-app.use('/api/auth', authRoutes);      // Email/pass: /api/auth/login, /api/auth/register
+app.use('/auth', oauthRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api', tenderRoutes);
 app.use('/api', proposalRoutes);
 app.use('/api', notificationRoutes);
