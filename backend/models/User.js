@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema({
     company_name: { 
         type: String,
         required: function () { 
-            return this.user_type !== 'admin'; 
+            return this.user_type !== 'admin' && this.user_type !== null; 
         }
     },
 
@@ -27,18 +27,16 @@ const userSchema = new mongoose.Schema({
 
     password: { 
         type: String, 
-        // No longer globally required — Google users won't have a real password
         required: function () {
-            return !this.googleId; // required only if NOT a Google user
+            return !this.googleId;
         },
         minlength: 6,
         select: false
     },
 
-    // ✅ NEW: Google OAuth field
     googleId: {
         type: String,
-        sparse: true  // allows multiple null values (non-Google users)
+        sparse: true
     },
 
     is_blocked: {
@@ -47,13 +45,13 @@ const userSchema = new mongoose.Schema({
     },
 
     user_type: { 
-  type: String, 
-  enum: ['admin', 'client', 'vendor'],
-  required: function() {
-    return !this.googleId; // required for normal signup, optional for Google
-  },
-  default: null
-},
+        type: String, 
+        enum: ['admin', 'client', 'vendor', null], // ✅ null without quotes
+        required: function() {
+            return !this.googleId;
+        },
+        default: null
+    },
 
     resetPasswordToken: String,
     resetPasswordExpire: Date
