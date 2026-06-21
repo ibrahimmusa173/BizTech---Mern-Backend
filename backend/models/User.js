@@ -47,10 +47,13 @@ const userSchema = new mongoose.Schema({
     },
 
     user_type: { 
-        type: String, 
-        enum: ['admin', 'client', 'vendor'],
-        required: true
-    },
+  type: String, 
+  enum: ['admin', 'client', 'vendor'],
+  required: function() {
+    return !this.googleId; // required for normal signup, optional for Google
+  },
+  default: null
+},
 
     resetPasswordToken: String,
     resetPasswordExpire: Date

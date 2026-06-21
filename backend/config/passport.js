@@ -25,7 +25,7 @@ passport.use(new GoogleStrategy({
           name: profile.displayName,
           email: profile.emails[0].value,
           password: crypto.randomBytes(16).toString('hex'),
-          user_type: 'client',
+          user_type: 'null',
           company_name: 'Not provided'
         });
       }
