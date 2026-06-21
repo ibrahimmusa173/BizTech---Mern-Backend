@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "A backend-only application using Express and MongoDB.",
   "main": "backend/server.js",
-"scripts": {
-  "start": "node backend/server.js",
-  "dev": "nodemon backend/server.js"
-},
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js"
+  },
   "keywords": [
     "express",
     "mongodb",
@@ -23,11 +23,14 @@
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "express-mongo-sanitize": "^2.2.0",
+    "express-session": "^1.19.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.5",
     "multer": "^2.0.2",
-    "nodemailer": "^6.9.14"
+    "nodemailer": "^6.9.14",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
