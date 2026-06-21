@@ -22,12 +22,13 @@ router.get('/google/callback',
       { expiresIn: '30d' }
     );
 
-    // New Google user with no role yet → send to role selection
-    if (!req.user.user_type) {
-      return res.redirect(
+    
+    // This works for both null and undefined
+if (!req.user.user_type) {
+    return res.redirect(
         `${process.env.FRONTEND_URL}/choose-role?token=${token}`
-      );
-    }
+    );
+}
 
     // Existing user who already has a role → go straight to dashboard
     res.redirect(

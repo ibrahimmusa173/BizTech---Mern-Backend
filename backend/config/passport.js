@@ -21,13 +21,13 @@ passport.use(new GoogleStrategy({
         await user.save({ validateBeforeSave: false });
       } else {
         user = await User.create({
-          googleId: profile.id,
-          name: profile.displayName,
-          email: profile.emails[0].value,
-          password: crypto.randomBytes(16).toString('hex'),
-          user_type: 'null',
-          company_name: 'Not provided'
-        });
+  googleId: profile.id,
+  name: profile.displayName,
+  email: profile.emails[0].value,
+  password: crypto.randomBytes(16).toString('hex'),
+  // ✅ Don't set user_type at all — let it be undefined, not null
+  company_name: 'Not provided'
+});
       }
     }
 

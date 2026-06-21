@@ -45,13 +45,13 @@ const userSchema = new mongoose.Schema({
     },
 
     user_type: { 
-        type: String, 
-        enum: ['admin', 'client', 'vendor', null], // ✅ null without quotes
-        required: function() {
-            return !this.googleId;
-        },
-        default: null
-    },
+    type: String, 
+    enum: ['admin', 'client', 'vendor'],
+    required: function() {
+        return !this.googleId;
+    }
+    // ✅ No default at all — field simply won't exist until set-role is called
+},
 
     resetPasswordToken: String,
     resetPasswordExpire: Date
