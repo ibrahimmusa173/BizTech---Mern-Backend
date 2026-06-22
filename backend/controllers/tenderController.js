@@ -22,25 +22,24 @@ const tenderController = {
     // CLIENT: Get all tenders for a specific client
    // controllers/tenderController.js
 getTenderDetails: async (req, res) => {
-    try {
-        let tender = await Tender.findById(req.params.id);
-        if (!tender) return res.status(404).json({ success: false, message: "Not found" });
+        try {
+            let tender = await Tender.findById(req.params.id);
+            if (!tender) return res.status(404).json({ success: false, message: "Tender not found" });
 
-        // If Vendor is Premium, populate the Client info
-        if (req.user.user_type === 'vendor' && req.user.isPremium) {
-            tender = await Tender.findById(req.params.id).populate('client_id', 'name email company_name');
-        } 
-        // If Client is viewing their own tender, populate info
-        else if (req.user.user_type === 'client' && tender.client_id.toString() === req.user.id) {
-            tender = await Tender.findById(req.params.id).populate('client_id', 'name email company_name');
+            // Premium Logic: Only populate if the vendor is premium
+            if (req.user.user_type === 'vendor' && req.user.isPremium) {
+                tender = await Tender.findById(req.params.id).populate('client_id', 'name email company_name');
+            } 
+            // If Client viewing their own, also populate
+            else if (req.user.user_type === 'client' && tender.client_id.toString() === req.user.id) {
+                tender = await Tender.findById(req.params.id).populate('client_id', 'name email company_name');
+            }
+
+            res.status(200).json({ success: true, data: tender });
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
         }
-
-        res.status(200).json({ success: true, data: tender });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-},
-
+    },
 
     // VENDOR: Search tenders by title or description
 searchTenders: async (req, res) => {
