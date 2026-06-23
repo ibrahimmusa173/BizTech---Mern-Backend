@@ -20,96 +20,69 @@ const tenderController = {
     },
 
     // CLIENT: Get all tenders for a specific client
-   // controllers/tenderController.js
-getTenderDetails: async (req, res) => {
+    getClientTenders: async (req, res) => {
+        try {
+            const tenders = await Tender.find({ client_id: req.user.id });
+            res.status(200).json({ success: true, data: tenders });
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Error fetching your tenders.", error: error.message });
+        }
+    },
+
+    // VENDOR/PUBLIC: View single tender details (WITH PREMIUM LOGIC)
+    getTenderDetails: async (req, res) => {
         try {
             let tender = await Tender.findById(req.params.id);
-            if (!tender) return res.status(404).json({ success: false, message: "Tender not found" });
+            if (!tender) return res.status(404).json({ success: false, message: "Tender not found." });
 
-            // Premium Logic: Only populate if the vendor is premium
-            if (req.user.user_type === 'vendor' && req.user.isPremium) {
-                tender = await Tender.findById(req.params.id).populate('client_id', 'name email company_name');
-            } 
-            // If Client viewing their own, also populate
-            else if (req.user.user_type === 'client' && tender.client_id.toString() === req.user.id) {
+            // LOGIC: Populate client info ONLY if Vendor is Premium OR User is the Owner (Client)
+            if ((req.user.user_type === 'vendor' && req.user.isPremium) || 
+                (req.user.user_type === 'client' && tender.client_id.toString() === req.user.id.toString())) {
                 tender = await Tender.findById(req.params.id).populate('client_id', 'name email company_name');
             }
 
             res.status(200).json({ success: true, data: tender });
         } catch (error) {
-            res.status(500).json({ success: false, message: error.message });
+            res.status(500).json({ success: false, message: "Error fetching tender details.", error: error.message });
         }
     },
 
-    // VENDOR: Search tenders by title or description
-searchTenders: async (req, res) => {
-    try {
-        const { q } = req.query;
+    // VENDOR: Search tenders
+    searchTenders: async (req, res) => {
+        try {
+            const { q } = req.query;
 
-        // If no query, return all active tenders as before
-        if (!q || q.trim() === '') {
-            const tenders = await Tender.find({ status: 'active' });
-            return res.status(200).json({ success: true, data: tenders });
-        }
-
-        // Atlas Search pipeline
-        const tenders = await Tender.aggregate([
-            {
-                $search: {
-                    index: 'default',   // name of your Atlas Search index
-                    compound: {
-                        should: [
-                            {
-                                // autocomplete on title — works as you type
-                                autocomplete: {
-                                    query: q,
-                                    path: 'title',
-                                    fuzzy: { maxEdits: 1 }  // typo tolerance
-                                }
-                            },
-                            {
-                                // autocomplete on category
-                                autocomplete: {
-                                    query: q,
-                                    path: 'category',
-                                    fuzzy: { maxEdits: 1 }
-                                }
-                            },
-                            {
-                                // full text on description
-                                text: {
-                                    query: q,
-                                    path: 'description',
-                                    fuzzy: { maxEdits: 1 }
-                                }
-                            }
-                        ]
-                    }
-                }
-            },
-            {
-                // filter only active tenders after search
-                $match: { status: 'active' }
-            },
-            {
-                // add relevance score to each result
-                $addFields: { score: { $meta: 'searchScore' } }
-            },
-            {
-                // highest relevance first
-                $sort: { score: -1 }
-            },
-            {
-                $limit: 20
+            if (!q || q.trim() === '') {
+                const tenders = await Tender.find({ status: 'active' });
+                return res.status(200).json({ success: true, data: tenders });
             }
-        ]);
 
-        res.status(200).json({ success: true, data: tenders });
+            // Atlas Search pipeline
+            const tenders = await Tender.aggregate([
+                {
+                    $search: {
+                        index: 'default',
+                        compound: {
+                            should: [
+                                { autocomplete: { query: q, path: 'title', fuzzy: { maxEdits: 1 } } },
+                                { autocomplete: { query: q, path: 'category', fuzzy: { maxEdits: 1 } } },
+                                { text: { query: q, path: 'description', fuzzy: { maxEdits: 1 } } }
+                            ]
+                        }
+                    }
+                },
+                { $match: { status: 'active' } },
+                { $addFields: { score: { $meta: 'searchScore' } } },
+                { $sort: { score: -1 } },
+                { $limit: 20 }
+            ]);
 
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Search failed.", error: error.message });
-    }
-},
+            res.status(200).json({ success: true, data: tenders });
+
+        } catch (error) {
+            res.status(500).json({ success: false, message: "Search failed.", error: error.message });
+        }
+    },
 
     // CLIENT: Close a tender
     closeTender: async (req, res) => {
@@ -143,35 +116,12 @@ searchTenders: async (req, res) => {
     },
 
     // VENDOR/PUBLIC: View all open tenders
-   getAllOpenTenders: async (req, res) => {
-    try {
-        // ✅ Changed from status: 'open' to status: 'active'
-        const tenders = await Tender.find({ status: 'active' });
-
-        res.status(200).json({
-            success: true,
-            data: tenders
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: "Error fetching tenders.",
-            error: error.message
-        });
-    }
-},
-
-
-
-    // VENDOR/PUBLIC: View single tender details
-    getTenderDetails: async (req, res) => {
+    getAllOpenTenders: async (req, res) => {
         try {
-            const tender = await Tender.findById(req.params.id);
-            if (!tender) return res.status(404).json({ success: false, message: "Tender not found." });
-            res.status(200).json({ success: true, data: tender });
+            const tenders = await Tender.find({ status: 'active' });
+            res.status(200).json({ success: true, data: tenders });
         } catch (error) {
-            res.status(500).json({ success: false, message: "Error fetching tender details.", error: error.message });
+            res.status(500).json({ success: false, message: "Error fetching tenders.", error: error.message });
         }
     }
 };

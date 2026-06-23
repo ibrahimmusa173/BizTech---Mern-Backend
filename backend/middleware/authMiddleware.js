@@ -13,20 +13,28 @@ const protect = async (req, res, next) => {
         if (!token) {
             return res.status(401).json({
                 success: false,
-                message: 'Not authorized to access this route'
+                message: 'Not authorized, no token'
             });
         }
 
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Find user
+        // Find user - We fetch the full user to ensure req.user.isPremium is available
         const user = await User.findById(decoded.id);
 
         if (!user) {
             return res.status(401).json({
                 success: false,
                 message: 'User not found'
+            });
+        }
+
+        // Check if user is blocked
+        if (user.is_blocked) {
+            return res.status(403).json({
+                success: false,
+                message: 'Your account has been blocked'
             });
         }
 
@@ -37,7 +45,7 @@ const protect = async (req, res, next) => {
     } catch (error) {
         return res.status(401).json({
             success: false,
-            message: 'Not authorized to access this route'
+            message: 'Not authorized, token failed'
         });
     }
 };
@@ -55,7 +63,7 @@ const authorize = (...roles) => {
         if (!roles.includes(req.user.user_type)) {
             return res.status(403).json({
                 success: false,
-                message: `User role '${req.user.user_type}' is not authorized`
+                message: `Role ${req.user.user_type} is not authorized to access this route`
             });
         }
 
@@ -63,5 +71,4 @@ const authorize = (...roles) => {
     };
 };
 
-// Exporting them so they can be destructured in other files
 module.exports = { protect, authorize };
