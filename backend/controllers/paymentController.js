@@ -17,8 +17,8 @@ exports.createCheckoutSession = async (req, res) => {
                 quantity: 1,
             }],
             mode: 'payment',
-            success_url: `${process.env.FRONTEND_URL}/vendor-dashboard?payment=success`,
-            cancel_url: `${process.env.FRONTEND_URL}/vendor-dashboard?payment=cancel`,
+            success_url: `${process.env.FRONTEND_URL}/vendor/dashboard?payment=success`,
+            cancel_url: `${process.env.FRONTEND_URL}/vendor/dashboard?payment=cancel`,
             customer_email: req.user.email,
             client_reference_id: req.user.id, // Pass user ID to webhook
         });
